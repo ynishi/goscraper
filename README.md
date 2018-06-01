@@ -1,4 +1,4 @@
-# goscraper
+# goscraper [![Build Status](https://travis-ci.org/ynishi/goscraper.svg?branch=master)](https://travis-ci.org/ynishi/goscraper)
 simple go scraper, using colly the scrapling framework.
 
 ## install
