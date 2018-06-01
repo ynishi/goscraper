@@ -9,3 +9,6 @@ before_install:
 
 install:
   - $GOPATH/bin/dep ensure
+
+script:
+  - go build 
