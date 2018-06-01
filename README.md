@@ -1,0 +1,2 @@
+# goscraper
+simple go scraper
