@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -19,6 +21,7 @@ func init() {
 	w := log.NewSyncWriter(os.Stderr)
 	logger = log.NewLogfmtLogger(w)
 	logger = level.NewFilter(logger, level.AllowDebug())
+	logger = log.With(logger, "ts", log.DefaultTimestamp, "caller", log.DefaultCaller)
 
 	viper.SetDefault("domain", "example.com")
 	viper.SetDefault("ua", "colly")
@@ -58,10 +61,17 @@ func init() {
 	}
 }
 
+const (
+	TagA    = "A"
+	TagFORM = "FORM"
+)
+
 type Link struct {
-	From *url.URL
-	To   *url.URL
-	Text string
+	From   *url.URL
+	To     *url.URL
+	Text   string
+	Tag    string
+	Method string
 }
 
 type Links []Link
@@ -107,7 +117,10 @@ func main() {
 		viper.GetString("form_username"): viper.GetString("username"),
 		viper.GetString("form_password"): viper.GetString("password"),
 	}
-	c.Post(viper.GetString("loginURL"), loginData)
+	err = c.Post(viper.GetString("loginURL"), loginData)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed login", "error", err)
+	}
 
 	var links *Links
 
@@ -116,25 +129,71 @@ func main() {
 	})
 
 	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
-		from, err := url.Parse(e.Request.AbsoluteURL(e.Request.Ctx.Get("url")))
+		link, err := e2Link(e)
 		if err != nil {
-			level.Error(logger).Log("msg", "invalid link from", "error", err, "url", e.Request.Ctx.Get("url"))
+			level.Error(logger).Log("msg", "failed to create link", "error", err)
 		}
-		to, err := url.Parse(e.Request.AbsoluteURL(e.Attr("href")))
-		if err != nil {
-			level.Error(logger).Log("msg", "invalid link to", "error", err, "url", e.Attr("href"))
-		}
-		link := &Link{
-			From: from,
-			To:   to,
-			Text: e.Text,
-		}
-		level.Info(logger).Log("msg", "found link", "from", link.From, "to", link.To, "text", link.Text)
+		logLink(level.Info(logger), "found link", link)
 		links.Add(link)
 		level.Debug(logger).Log("msg", "added link", "links", links.String())
 		c.Visit(link.To.String())
 	})
 
+	c.OnHTML("form[action]", func(e *colly.HTMLElement) {
+		link, err := e2Link(e)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to create link", "error", err)
+		}
+		logLink(level.Info(logger), "found link", link)
+		links.Add(link)
+		level.Debug(logger).Log("msg", "added link", "links", links.String())
+		if link.Method == http.MethodPost {
+			// TODO: foreach attr to data
+			c.Post(link.To.String(), map[string]string{})
+		} else {
+			c.Visit(link.To.String())
+		}
+	})
+
 	links = &Links{}
 	c.Visit(viper.GetString("entry"))
+}
+
+func logLink(logger log.Logger, msg string, link *Link) {
+	if msg == "" {
+		msg = "link"
+	}
+	logger.Log("msg", msg, "from", link.From, "to", link.To, "text", link.Text, "tag", link.Tag, "method", link.Method)
+}
+
+func e2Link(e *colly.HTMLElement) (link *Link, err error) {
+	from, err := url.Parse(e.Request.AbsoluteURL(e.Request.Ctx.Get("url")))
+	if err != nil {
+		return nil, fmt.Errorf("invalid link from:%s:%v", e.Request.Ctx.Get("url"), err)
+	}
+	var rawTo string
+	switch {
+	case e.Attr("action") != "":
+		rawTo = e.Attr("action")
+	case e.Attr("href") != "":
+		rawTo = e.Attr("href")
+	}
+	to, err := url.Parse(e.Request.AbsoluteURL(rawTo))
+	if err != nil {
+		return nil, fmt.Errorf("invalid link to:%s:%v", rawTo, err)
+	}
+	var method string
+	if e.Attr("method") != "" {
+		method = strings.ToUpper(e.Attr("method"))
+	} else {
+		method = http.MethodGet
+	}
+	link = &Link{
+		From:   from,
+		To:     to,
+		Text:   e.Text,
+		Tag:    e.Name,
+		Method: method,
+	}
+	return link, nil
 }
