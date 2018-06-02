@@ -14,8 +14,8 @@ import (
 type Link struct {
 	From        *url.URL
 	To          *url.URL
-	AttrOnClick string
 	AttrId      string
+	AttrOnClick string
 	Text        string
 	Tag         string
 	Method      string
@@ -76,8 +76,8 @@ func E2Link(e *colly.HTMLElement) (link *Link, err error) {
 	link = &Link{
 		From:        from,
 		To:          to,
-		AttrOnClick: e.Attr("onclick"),
 		AttrId:      e.Attr("id"),
+		AttrOnClick: e.Attr("onclick"),
 		Text:        text,
 		Tag:         e.Name,
 		Method:      method,
@@ -89,5 +89,14 @@ func LogLink(logger log.Logger, msg string, link *Link) {
 	if msg == "" {
 		msg = "link"
 	}
-	logger.Log("msg", msg, "from", link.From, "to", link.To, "text", link.Text, "tag", link.Tag, "method", link.Method)
+	logger.Log(
+		"msg", msg,
+		"from", link.From,
+		"to", link.To,
+		"attrid", link.AttrId,
+		"attronclick", link.AttrOnClick,
+		"text", link.Text,
+		"tag", link.Tag,
+		"method", link.Method,
+)
 }
