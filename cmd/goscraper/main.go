@@ -24,35 +24,37 @@ func init() {
 	logger = level.NewFilter(logger, level.AllowDebug())
 	logger = log.With(logger, "ts", log.DefaultTimestamp, "caller", log.DefaultCaller)
 
-	viper.SetDefault("domain", "example.com")
-	viper.SetDefault("ua", "goscraper")
-	viper.SetDefault("entry", "https://example.com/")
-	viper.SetDefault("loginURL", "https://example.com/login")
-	viper.SetDefault("form_username", "username")
-	viper.SetDefault("username", "username")
-	viper.SetDefault("form_password", "password")
-	viper.SetDefault("password", "password")
-	viper.SetDefault("maxdepth", 2)
-	viper.SetDefault("config", "config")
-	viper.SetDefault("useConfig", false)
+	viper.SetDefault(gos.OptDOMAIN, "example.com")
+	viper.SetDefault(gos.OptUA, "goscraper")
+	viper.SetDefault(gos.OptENTRY, "https://example.com/")
+	viper.SetDefault(gos.OptLOGINURL, "https://example.com/login")
+	viper.SetDefault(gos.OptFORM_USERNAME, "username")
+	viper.SetDefault(gos.OptUSERNAME, "username")
+	viper.SetDefault(gos.OptFORM_PASSWORD, "password")
+	viper.SetDefault(gos.OptPASSWORD, "password")
+	viper.SetDefault(gos.OptMAXDEPTH, 2)
+	viper.SetDefault(gos.OptCONFIG, "config")
+	viper.SetDefault(gos.OptUSECONFIG, false)
+	viper.SetDefault(gos.OptCSVFILE, "goscraper.csv")
 
-	viper.SetEnvPrefix("scrp") // env SCRP_XXX
-	viper.BindEnv("domain")
-	viper.BindEnv("ua")
-	viper.BindEnv("entry")
-	viper.BindEnv("loginURL")
-	viper.BindEnv("form_username")
-	viper.BindEnv("username")
-	viper.BindEnv("form_password")
-	viper.BindEnv("password")
-	viper.BindEnv("maxdepth")
-	viper.BindEnv("config")
-	viper.BindEnv("useConfig")
+	viper.SetEnvPrefix(gos.OptSCRP) // env SCRP_XXX
+	viper.BindEnv(gos.OptDOMAIN)    // comma separated list, no use colly default env
+	viper.BindEnv(gos.OptUA)        // no use colly default env
+	viper.BindEnv(gos.OptENTRY)
+	viper.BindEnv(gos.OptLOGINURL)
+	viper.BindEnv(gos.OptFORM_USERNAME)
+	viper.BindEnv(gos.OptUSERNAME)
+	viper.BindEnv(gos.OptFORM_PASSWORD)
+	viper.BindEnv(gos.OptPASSWORD)
+	viper.BindEnv(gos.OptMAXDEPTH) // no use colly default env
+	viper.BindEnv(gos.OptCONFIG)
+	viper.BindEnv(gos.OptUSECONFIG)
+	viper.BindEnv(gos.OptCSVFILE)
+	viper.BindEnv(gos.OptURLFILTER)    // comma separated list
+	viper.BindEnv(gos.OptDISURLFILTER) //comma separated list
 
-	fmt.Println(viper.Get("domain"))
-
-	if viper.GetBool("useConfig") {
-		viper.SetConfigName(viper.GetString("config"))
+	if viper.GetBool(gos.OptUSECONFIG) {
+		viper.SetConfigName(viper.GetString(gos.OptCONFIG))
 		viper.AddConfigPath(".")
 		err := viper.ReadInConfig()
 		if err != nil {
@@ -64,24 +66,35 @@ func init() {
 
 func main() {
 
-	u, err := url.Parse(viper.GetString("entry"))
+	u, err := url.Parse(viper.GetString(gos.OptENTRY))
 	if err != nil {
 		level.Error(logger).Log("msg", "failed parse entry url", "error", err)
 		os.Exit(1)
 	}
-	c := colly.NewCollector(
-		colly.UserAgent(viper.GetString("ua")),
-		colly.AllowedDomains(viper.GetString("domain"), u.Host),
+
+	opts := []func(*colly.Collector){
+		colly.UserAgent(viper.GetString(gos.OptUA)),
+		colly.AllowedDomains(append(strings.Split(viper.GetString(gos.OptDOMAIN), ","), u.Host)...),
 		colly.AllowURLRevisit(),
 		colly.Debugger(&debug.LogDebugger{}),
-		colly.MaxDepth(viper.GetInt("maxdepth")),
-	)
+		colly.MaxDepth(viper.GetInt(gos.OptMAXDEPTH)),
+	}
+
+	if viper.GetString(gos.OptURLFILTER) != "" {
+		opts = append(opts, colly.URLFilters(gos.Str2filters(viper.GetString(gos.OptURLFILTER), ",")...))
+	}
+
+	if viper.GetString(gos.OptDISURLFILTER) != "" {
+		opts = append(opts, colly.DisallowedURLFilters(gos.Str2filters(viper.GetString(gos.OptDISURLFILTER), ",")...))
+	}
+
+	c := colly.NewCollector(opts...)
 
 	loginData := map[string]string{
-		viper.GetString("form_username"): viper.GetString("username"),
-		viper.GetString("form_password"): viper.GetString("password"),
+		viper.GetString(gos.OptFORM_USERNAME): viper.GetString(gos.OptUSERNAME),
+		viper.GetString(gos.OptFORM_PASSWORD): viper.GetString(gos.OptPASSWORD),
 	}
-	err = c.Post(viper.GetString("loginURL"), loginData)
+	err = c.Post(viper.GetString(gos.OptLOGINURL), loginData)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed login", "error", err)
 	}
@@ -98,6 +111,7 @@ func main() {
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to create link", "error", err)
 		}
+		link.Selector = "a[html],form,[onclick]"
 		gos.LogLink(level.Info(logger), "found link", link)
 		if exists := links[*link]; !exists {
 			links[*link] = true
@@ -123,5 +137,16 @@ func main() {
 	})
 
 	links = make(gos.Links)
-	c.Visit(viper.GetString("entry"))
+	c.Visit(viper.GetString(gos.OptENTRY))
+	fname := viper.GetString(gos.OptCSVFILE)
+	f, err := os.OpenFile(fname, os.O_WRONLY|os.O_CREATE, 0600)
+	defer f.Close()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to open csvfile", "error", err, "csvfile", fname)
+		os.Exit(1)
+	}
+	err = gos.WriteLinks2Csv(links, f)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to write csv", "error", err, "csvfile", f.Name())
+	}
 }

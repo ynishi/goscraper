@@ -1,15 +1,42 @@
 package goscraper
 
 import (
+	"encoding/csv"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/go-kit/kit/log"
-
 	"github.com/gocolly/colly"
 )
+
+const (
+	OptSCRP          = "scrp"
+	OptDOMAIN        = "domain"
+	OptUA            = "ua"
+	OptENTRY         = "entry"
+	OptLOGINURL      = "loginURL"
+	OptFORM_USERNAME = "form_username"
+	OptUSERNAME      = "username"
+	OptFORM_PASSWORD = "form_password"
+	OptPASSWORD      = "password"
+	OptMAXDEPTH      = "maxdepth"
+	OptCONFIG        = "config"
+	OptUSECONFIG     = "useConfig"
+	OptCSVFILE       = "csvfile"
+	OptDISURLFILTER  = "disurlfilter"
+	OptURLFILTER     = "urlfilter"
+)
+
+var FormTypeBtn = map[string]bool{
+	"submit": true,
+	"image":  true,
+	"reset":  true,
+	"button": true,
+}
 
 type Link struct {
 	From        *url.URL
@@ -19,16 +46,10 @@ type Link struct {
 	Text        string
 	Tag         string
 	Method      string
+	Selector    string
 }
 
 type Links map[Link]bool
-
-var FormTypeBtn = map[string]bool{
-	"submit": true,
-	"image":  true,
-	"reset":  true,
-	"button": true,
-}
 
 func E2Link(e *colly.HTMLElement) (link *Link, err error) {
 	from, err := url.Parse(e.Request.AbsoluteURL(e.Request.Ctx.Get("url")))
@@ -85,6 +106,42 @@ func E2Link(e *colly.HTMLElement) (link *Link, err error) {
 	return link, nil
 }
 
+func WriteLinks2Csv(links Links, w io.Writer) (err error) {
+	cw := csv.NewWriter(w)
+	cw.Write([]string{
+		"no",
+		"from",
+		"to",
+		"onclick",
+		"method",
+	})
+	i := 0
+	for k, _ := range links {
+		i++
+		if err := cw.Write([]string{
+			fmt.Sprintf("%d", i),
+			k.From.String(),
+			k.To.String(),
+			k.AttrOnClick,
+			k.Method,
+		}); err != nil {
+			return fmt.Errorf("failed to write csv record:%v", err)
+		}
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		return fmt.Errorf("failed to write csv:%v", err)
+	}
+	return nil
+}
+
+func Str2filters(str, sep string) (filters []*regexp.Regexp) {
+	for _, filter := range strings.Split(str, sep) {
+		filters = append(filters, regexp.MustCompile(filter))
+	}
+	return filters
+}
+
 func LogLink(logger log.Logger, msg string, link *Link) {
 	if msg == "" {
 		msg = "link"
@@ -98,5 +155,5 @@ func LogLink(logger log.Logger, msg string, link *Link) {
 		"text", link.Text,
 		"tag", link.Tag,
 		"method", link.Method,
-)
+	)
 }
