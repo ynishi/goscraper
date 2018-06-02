@@ -12,6 +12,7 @@ import (
 	"github.com/gocolly/colly"
 	"github.com/gocolly/colly/debug"
 	"github.com/spf13/viper"
+	gos "github.com/ynishi/goscraper"
 )
 
 var logger log.Logger
@@ -24,7 +25,7 @@ func init() {
 	logger = log.With(logger, "ts", log.DefaultTimestamp, "caller", log.DefaultCaller)
 
 	viper.SetDefault("domain", "example.com")
-	viper.SetDefault("ua", "colly")
+	viper.SetDefault("ua", "goscraper")
 	viper.SetDefault("entry", "https://example.com/")
 	viper.SetDefault("loginURL", "https://example.com/login")
 	viper.SetDefault("form_username", "username")
@@ -61,24 +62,6 @@ func init() {
 	}
 }
 
-type Link struct {
-	From   *url.URL
-	To     *url.URL
-	Text   string
-	Tag    string
-	Method string
-}
-
-type Links map[Link]bool
-
-func (ls *Links) String() (res string) {
-	for _, l := range *ls {
-		res = fmt.Sprintf("%s %s", res, l)
-	}
-	res = fmt.Sprintf("[%s]", res)
-	return res
-}
-
 func main() {
 
 	u, err := url.Parse(viper.GetString("entry"))
@@ -103,88 +86,42 @@ func main() {
 		level.Error(logger).Log("msg", "failed login", "error", err)
 	}
 
-	var links Links
+	var links gos.Links
 
 	c.OnRequest(func(r *colly.Request) {
 		level.Debug(logger).Log("msg", "requesting...", "url", r.URL.String(), "method", r.Method)
 		r.Ctx.Put("url", r.URL.String())
 	})
 
-	c.OnHTML("a[href],form[action]", func(e *colly.HTMLElement) {
-		link, err := e2Link(e)
+	c.OnHTML("a[html],form,[onclick]", func(e *colly.HTMLElement) {
+		link, err := gos.E2Link(e)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to create link", "error", err)
 		}
-		logLink(level.Info(logger), "found link", link)
+		gos.LogLink(level.Info(logger), "found link", link)
 		if exists := links[*link]; !exists {
 			links[*link] = true
 			level.Debug(logger).Log("msg", "added link", "links", fmt.Sprintf("%v", links))
 			if link.Method == http.MethodPost {
 				param := make(map[string]string)
 				e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
-					if ce.Attr("type") != "submit" {
+					if !gos.FormTypeBtn[ce.Attr("type")] {
 						param[ce.Attr("name")] = ce.Attr("value")
 					}
 				})
 				level.Debug(logger).Log("msg", "post", "url", link.To.String(), "param", fmt.Sprintf("%v", param))
 				c.Post(link.To.String(), param)
 			} else {
-				level.Debug(logger).Log("msg", "visit", "url", link.To.String())
-				c.Visit(link.To.String())
+				if !strings.HasPrefix(link.To.String(), "javascript:") {
+					level.Debug(logger).Log("msg", "visit", "url", e.Request.AbsoluteURL(link.To.String()))
+					c.Visit(link.To.String())
+				}
 			}
 		} else {
-			logLink(level.Debug(logger), "already exists in links", link)
+			gos.LogLink(level.Debug(logger), "already exists in links", link)
 		}
 	})
 
-	links = make(Links)
+	links = make(gos.Links)
 	c.Visit(viper.GetString("entry"))
-}
-
-func logLink(logger log.Logger, msg string, link *Link) {
-	if msg == "" {
-		msg = "link"
-	}
-	logger.Log("msg", msg, "from", link.From, "to", link.To, "text", link.Text, "tag", link.Tag, "method", link.Method)
-}
-
-func e2Link(e *colly.HTMLElement) (link *Link, err error) {
-	from, err := url.Parse(e.Request.AbsoluteURL(e.Request.Ctx.Get("url")))
-	if err != nil {
-		return nil, fmt.Errorf("invalid link from:%s:%v", e.Request.Ctx.Get("url"), err)
-	}
-	var rawTo string
-	switch {
-	case e.Attr("action") != "":
-		rawTo = e.Attr("action")
-	case e.Attr("href") != "":
-		rawTo = e.Attr("href")
-	}
-	to, err := url.Parse(e.Request.AbsoluteURL(rawTo))
-	if err != nil {
-		return nil, fmt.Errorf("invalid link to:%s:%v", rawTo, err)
-	}
-	var method string
-	if e.Attr("method") != "" {
-		method = strings.ToUpper(e.Attr("method"))
-	} else {
-		method = http.MethodGet
-	}
-	var text string
-	text = e.Text
-	if e.Name == "form" {
-		e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
-		  if ce.Attr("type") == "submit" {
-		  	text = ce.Attr("value")
-		  }
-		})
-	}
-	link = &Link{
-		From:   from,
-		To:     to,
-		Text:   text,
-		Tag:    e.Name,
-		Method: method,
-	}
-	return link, nil
 }
