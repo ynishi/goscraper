@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -141,37 +140,10 @@ func main() {
 
 	links = make(gos.Links)
 	c.Visit(viper.GetString(gos.OptENTRY))
-	fname := fmt.Sprintf("%s_%s.%s",
-		viper.GetString(gos.OptOUTFILE),
-		time.Now().Format("20060102150405"),
-		viper.GetString(gos.OptOUTTYPE))
-	f, err := os.OpenFile(fname, os.O_WRONLY|os.O_CREATE, 0600)
-	defer f.Close()
+	filename, err := gos.Output(links, viper.GetString(gos.OptOUTFILE), viper.GetString(gos.OptOUTTYPE))
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to open output file", "error", err, "filename", fname)
+		level.Error(logger).Log("msg", "failed to output", "error", err)
 		os.Exit(1)
 	}
-	switch viper.GetString(gos.OptOUTTYPE) {
-	case gos.OptOUTPUTCSV:
-		err = gos.WriteLinks2Csv(links, f)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to write csv", "error", err, "filename", f.Name())
-			os.Exit(1)
-		}
-		level.Info(logger).Log("msg", "write output", "filename", f.Name())
-	case gos.OptOUTPUTJSON:
-		b, err := gos.Links2Json(links)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to marshal", "error", err)
-			os.Exit(1)
-		}
-		_, err = f.Write(b)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to write json", "error", err, "filename", f.Name())
-			os.Exit(1)
-		}
-		level.Info(logger).Log("msg", "write output", "filename", f.Name())
-	default:
-		level.Info(logger).Log("msg", "links", "links", links)
-	}
+	level.Info(logger).Log("msg", "write output", "filename", filename)
 }

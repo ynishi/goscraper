@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/gocolly/colly"
@@ -108,6 +110,32 @@ func E2Link(e *colly.HTMLElement) (link *Link, err error) {
 		Method:      method,
 	}
 	return link, nil
+}
+
+func Output(links Links, outfile, outtype string) (filename string, err error) {
+	filename = fmt.Sprintf("%s_%s.%s", outfile, time.Now().Format("20060102150405"), outtype)
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0600)
+	defer f.Close()
+	if err != nil {
+		return "", fmt.Errorf("failed to open output file:%s:%v", filename, err)
+	}
+	switch outtype {
+	case OptOUTPUTCSV:
+		err = WriteLinks2Csv(links, f)
+		if err != nil {
+			return "", fmt.Errorf("failed to write csv:%s:%v", f.Name(), err)
+		}
+	case OptOUTPUTJSON:
+		b, err := Links2Json(links)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal:%v", err)
+		}
+		_, err = f.Write(b)
+		if err != nil {
+			return "", fmt.Errorf("failed to write json:%s:%v", f.Name(), err)
+		}
+	}
+	return filename, nil
 }
 
 func Links2Json(links Links) (b []byte, err error) {
