@@ -61,11 +61,6 @@ func init() {
 	}
 }
 
-const (
-	TagA    = "A"
-	TagFORM = "FORM"
-)
-
 type Link struct {
 	From   *url.URL
 	To     *url.URL
@@ -76,8 +71,8 @@ type Link struct {
 
 type Links []Link
 
-func (ls *Links) Add(link *Link) {
-	var found bool
+func (ls *Links) Add(link *Link) (added bool) {
+	found := false
 	for _, l := range *ls {
 		if l == *link {
 			found = true
@@ -87,7 +82,7 @@ func (ls *Links) Add(link *Link) {
 	if !found {
 		*ls = append(*ls, *link)
 	}
-	return
+	return !found
 }
 
 func (ls *Links) String() (res string) {
@@ -125,33 +120,34 @@ func main() {
 	var links *Links
 
 	c.OnRequest(func(r *colly.Request) {
+		level.Debug(logger).Log("msg", "requesting...", "url", r.URL.String(), "method", r.Method)
 		r.Ctx.Put("url", r.URL.String())
 	})
 
-	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+	c.OnHTML("a[href],form[action]", func(e *colly.HTMLElement) {
 		link, err := e2Link(e)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to create link", "error", err)
 		}
 		logLink(level.Info(logger), "found link", link)
-		links.Add(link)
-		level.Debug(logger).Log("msg", "added link", "links", links.String())
-		c.Visit(link.To.String())
-	})
-
-	c.OnHTML("form[action]", func(e *colly.HTMLElement) {
-		link, err := e2Link(e)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to create link", "error", err)
-		}
-		logLink(level.Info(logger), "found link", link)
-		links.Add(link)
-		level.Debug(logger).Log("msg", "added link", "links", links.String())
-		if link.Method == http.MethodPost {
-			// TODO: foreach attr to data
-			c.Post(link.To.String(), map[string]string{})
+		if OK := links.Add(link); OK {
+			// new link added, visit it
+			level.Debug(logger).Log("msg", "added link", "links", links.String())
+			if link.Method == http.MethodPost {
+				postData := make(map[string]string)
+				e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
+					if ce.Attr("type") != "submit" {
+						postData[ce.Attr("name")] = ce.Attr("value")
+					}
+				})
+				level.Debug(logger).Log("msg", "post", "url", link.To.String(), "payload", fmt.Sprintf("%v", postData))
+				c.Post(link.To.String(), postData)
+			} else {
+				level.Debug(logger).Log("msg", "visit", "url", link.To.String())
+				c.Visit(link.To.String())
+			}
 		} else {
-			c.Visit(link.To.String())
+			logLink(level.Debug(logger), "already exists in links", link)
 		}
 	})
 
