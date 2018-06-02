@@ -69,21 +69,7 @@ type Link struct {
 	Method string
 }
 
-type Links []Link
-
-func (ls *Links) Add(link *Link) (added bool) {
-	found := false
-	for _, l := range *ls {
-		if l == *link {
-			found = true
-			break
-		}
-	}
-	if !found {
-		*ls = append(*ls, *link)
-	}
-	return !found
-}
+type Links map[Link]bool
 
 func (ls *Links) String() (res string) {
 	for _, l := range *ls {
@@ -117,7 +103,7 @@ func main() {
 		level.Error(logger).Log("msg", "failed login", "error", err)
 	}
 
-	var links *Links
+	var links Links
 
 	c.OnRequest(func(r *colly.Request) {
 		level.Debug(logger).Log("msg", "requesting...", "url", r.URL.String(), "method", r.Method)
@@ -130,18 +116,18 @@ func main() {
 			level.Error(logger).Log("msg", "failed to create link", "error", err)
 		}
 		logLink(level.Info(logger), "found link", link)
-		if OK := links.Add(link); OK {
-			// new link added, visit it
-			level.Debug(logger).Log("msg", "added link", "links", links.String())
+		if exists := links[*link]; !exists {
+			links[*link] = true
+			level.Debug(logger).Log("msg", "added link", "links", fmt.Sprintf("%v", links))
 			if link.Method == http.MethodPost {
-				postData := make(map[string]string)
+				param := make(map[string]string)
 				e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
 					if ce.Attr("type") != "submit" {
-						postData[ce.Attr("name")] = ce.Attr("value")
+						param[ce.Attr("name")] = ce.Attr("value")
 					}
 				})
-				level.Debug(logger).Log("msg", "post", "url", link.To.String(), "payload", fmt.Sprintf("%v", postData))
-				c.Post(link.To.String(), postData)
+				level.Debug(logger).Log("msg", "post", "url", link.To.String(), "param", fmt.Sprintf("%v", param))
+				c.Post(link.To.String(), param)
 			} else {
 				level.Debug(logger).Log("msg", "visit", "url", link.To.String())
 				c.Visit(link.To.String())
@@ -151,7 +137,7 @@ func main() {
 		}
 	})
 
-	links = &Links{}
+	links = make(Links)
 	c.Visit(viper.GetString("entry"))
 }
 
@@ -184,10 +170,19 @@ func e2Link(e *colly.HTMLElement) (link *Link, err error) {
 	} else {
 		method = http.MethodGet
 	}
+	var text string
+	text = e.Text
+	if e.Name == "form" {
+		e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
+		  if ce.Attr("type") == "submit" {
+		  	text = ce.Attr("value")
+		  }
+		})
+	}
 	link = &Link{
 		From:   from,
 		To:     to,
-		Text:   e.Text,
+		Text:   text,
 		Tag:    e.Name,
 		Method: method,
 	}
