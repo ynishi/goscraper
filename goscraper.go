@@ -2,6 +2,7 @@ package goscraper
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,10 @@ const (
 	OptMAXDEPTH      = "maxdepth"
 	OptCONFIG        = "config"
 	OptUSECONFIG     = "useConfig"
-	OptCSVFILE       = "csvfile"
+	OptOUTTYPE       = "outtype"
+	OptOUTPUTCSV     = "csv"
+	OptOUTPUTJSON    = "json"
+	OptOUTFILE       = "outfile"
 	OptDISURLFILTER  = "disurlfilter"
 	OptURLFILTER     = "urlfilter"
 )
@@ -39,14 +43,14 @@ var FormTypeBtn = map[string]bool{
 }
 
 type Link struct {
-	From        *url.URL
-	To          *url.URL
-	AttrId      string
-	AttrOnClick string
-	Text        string
-	Tag         string
-	Method      string
-	Selector    string
+	From        *url.URL `json:"from"`
+	To          *url.URL `json:"to"`
+	AttrId      string   `json:"attr_id"`
+	AttrOnClick string   `json:"attr_onclick"`
+	Text        string   `json:"text"`
+	Tag         string   `json:"tag"`
+	Method      string   `json:"method"`
+	Selector    string   `json:"selector"`
 }
 
 type Links map[Link]bool
@@ -104,6 +108,15 @@ func E2Link(e *colly.HTMLElement) (link *Link, err error) {
 		Method:      method,
 	}
 	return link, nil
+}
+
+func Links2Json(links Links) (b []byte, err error) {
+	v := []Link{}
+	for link, _ := range links {
+		v = append(v, link)
+	}
+	b, err = json.Marshal(v)
+	return b, err
 }
 
 func WriteLinks2Csv(links Links, w io.Writer) (err error) {

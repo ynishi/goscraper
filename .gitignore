@@ -13,4 +13,4 @@
 
 vendor
 .idea
-*.csv
+output*

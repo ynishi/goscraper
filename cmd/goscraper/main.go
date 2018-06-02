@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -35,7 +36,8 @@ func init() {
 	viper.SetDefault(gos.OptMAXDEPTH, 2)
 	viper.SetDefault(gos.OptCONFIG, "config")
 	viper.SetDefault(gos.OptUSECONFIG, false)
-	viper.SetDefault(gos.OptCSVFILE, "goscraper.csv")
+	viper.SetDefault(gos.OptOUTFILE, "output")
+	viper.SetDefault(gos.OptOUTTYPE, gos.OptOUTPUTCSV)
 
 	viper.SetEnvPrefix(gos.OptSCRP) // env SCRP_XXX
 	viper.BindEnv(gos.OptDOMAIN)    // comma separated list, no use colly default env
@@ -49,7 +51,8 @@ func init() {
 	viper.BindEnv(gos.OptMAXDEPTH) // no use colly default env
 	viper.BindEnv(gos.OptCONFIG)
 	viper.BindEnv(gos.OptUSECONFIG)
-	viper.BindEnv(gos.OptCSVFILE)
+	viper.BindEnv(gos.OptOUTFILE)
+	viper.BindEnv(gos.OptOUTTYPE)
 	viper.BindEnv(gos.OptURLFILTER)    // comma separated list
 	viper.BindEnv(gos.OptDISURLFILTER) //comma separated list
 
@@ -138,15 +141,37 @@ func main() {
 
 	links = make(gos.Links)
 	c.Visit(viper.GetString(gos.OptENTRY))
-	fname := viper.GetString(gos.OptCSVFILE)
+	fname := fmt.Sprintf("%s_%s.%s",
+		viper.GetString(gos.OptOUTFILE),
+		time.Now().Format("20060102150405"),
+		viper.GetString(gos.OptOUTTYPE))
 	f, err := os.OpenFile(fname, os.O_WRONLY|os.O_CREATE, 0600)
 	defer f.Close()
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to open csvfile", "error", err, "csvfile", fname)
+		level.Error(logger).Log("msg", "failed to open output file", "error", err, "filename", fname)
 		os.Exit(1)
 	}
-	err = gos.WriteLinks2Csv(links, f)
-	if err != nil {
-		level.Error(logger).Log("msg", "failed to write csv", "error", err, "csvfile", f.Name())
+	switch viper.GetString(gos.OptOUTTYPE) {
+	case gos.OptOUTPUTCSV:
+		err = gos.WriteLinks2Csv(links, f)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to write csv", "error", err, "filename", f.Name())
+			os.Exit(1)
+		}
+		level.Info(logger).Log("msg", "write output", "filename", f.Name())
+	case gos.OptOUTPUTJSON:
+		b, err := gos.Links2Json(links)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to marshal", "error", err)
+			os.Exit(1)
+		}
+		_, err = f.Write(b)
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to write json", "error", err, "filename", f.Name())
+			os.Exit(1)
+		}
+		level.Info(logger).Log("msg", "write output", "filename", f.Name())
+	default:
+		level.Info(logger).Log("msg", "links", "links", links)
 	}
 }
