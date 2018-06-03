@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -90,60 +88,30 @@ func main() {
 		opts = append(opts, colly.DisallowedURLFilters(gos.Str2filters(viper.GetString(gos.OptDISURLFILTER), ",")...))
 	}
 
-	c := colly.NewCollector(opts...)
-
-	loginData := map[string]string{
-		viper.GetString(gos.OptFORM_USERNAME): viper.GetString(gos.OptUSERNAME),
-		viper.GetString(gos.OptFORM_PASSWORD): viper.GetString(gos.OptPASSWORD),
-	}
-	err = c.Post(viper.GetString(gos.OptLOGINURL), loginData)
+	linkScraper, err := gos.NewLinkScraper(
+		&gos.Config{
+			Collector: colly.NewCollector(opts...),
+			Links:     make(gos.Links),
+			Logger:    logger,
+			LoginURL:  viper.GetString(gos.OptLOGINURL),
+			LoginData: map[string]string{
+				viper.GetString(gos.OptFORM_USERNAME): viper.GetString(gos.OptUSERNAME),
+				viper.GetString(gos.OptFORM_PASSWORD): viper.GetString(gos.OptPASSWORD),
+			},
+			Entry:   viper.GetString(gos.OptENTRY),
+			OutFile: viper.GetString(gos.OptOUTFILE),
+			OutType: viper.GetString(gos.OptOUTTYPE),
+		},
+	)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed login", "error", err)
-	}
-
-	var links gos.Links
-
-	c.OnRequest(func(r *colly.Request) {
-		level.Debug(logger).Log("msg", "requesting...", "url", r.URL.String(), "method", r.Method)
-		r.Ctx.Put("url", r.URL.String())
-	})
-
-	c.OnHTML("a[html],form,[onclick]", func(e *colly.HTMLElement) {
-		link, err := gos.E2Link(e)
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to create link", "error", err)
-		}
-		link.Selector = "a[html],form,[onclick]"
-		gos.LogLink(level.Info(logger), "found link", link)
-		if exists := links[*link]; !exists {
-			links[*link] = true
-			level.Debug(logger).Log("msg", "added link", "links", fmt.Sprintf("%v", links))
-			if link.Method == http.MethodPost {
-				param := make(map[string]string)
-				e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
-					if !gos.FormTypeBtn[ce.Attr("type")] {
-						param[ce.Attr("name")] = ce.Attr("value")
-					}
-				})
-				level.Debug(logger).Log("msg", "post", "url", link.To.String(), "param", fmt.Sprintf("%v", param))
-				c.Post(link.To.String(), param)
-			} else {
-				if !strings.HasPrefix(link.To.String(), "javascript:") {
-					level.Debug(logger).Log("msg", "visit", "url", e.Request.AbsoluteURL(link.To.String()))
-					c.Visit(link.To.String())
-				}
-			}
-		} else {
-			gos.LogLink(level.Debug(logger), "already exists in links", link)
-		}
-	})
-
-	links = make(gos.Links)
-	c.Visit(viper.GetString(gos.OptENTRY))
-	filename, err := gos.Output(links, viper.GetString(gos.OptOUTFILE), viper.GetString(gos.OptOUTTYPE))
-	if err != nil {
-		level.Error(logger).Log("msg", "failed to output", "error", err)
+		level.Error(logger).Log("msg", "failed to construct LinkScraper", "error", err)
 		os.Exit(1)
 	}
-	level.Info(logger).Log("msg", "write output", "filename", filename)
+
+	err = linkScraper.Scrape()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to scrape", "error", err)
+		os.Exit(1)
+	}
+
 }
