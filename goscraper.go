@@ -1,10 +1,13 @@
 package goscraper
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,9 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sclevine/agouti"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gocolly/colly"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -263,7 +270,7 @@ func (ls *LinkScraper) Output() (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to open output file:%s:%v", filename, err)
 	}
-	switch ls.OutFile {
+	switch ls.OutType {
 	case OptOUTPUTCSV:
 		err = WriteLinks2Csv(ls.Links, f)
 		if err != nil {
@@ -360,7 +367,7 @@ func SummaryLink(links Links) (res Links, err error) {
 func addNotSimiler(links Links, link Link) (resLinks Links, isAdded bool) {
 	found := false
 	for l, _ := range links {
-		if isSimilerURL(link.From, l.From) && isSimilerURL(link.To, l.To) {
+		if isSimilerURL(link.From, l.From) && isSimilerURL(link.To, l.To) && link.AttrOnClick == l.AttrOnClick {
 			found = true
 			break
 		}
@@ -393,4 +400,156 @@ func isSimilerURL(u1, u2 *url.URL) (same bool) {
 	} else {
 		return false
 	}
+}
+
+type Browser struct {
+	Driver *agouti.WebDriver
+	Db     *sql.DB
+	Logger log.Logger
+	Links  Links
+}
+
+type BrowserConfig struct {
+	Driver *agouti.WebDriver
+	Db     *sql.DB
+	Logger log.Logger
+	Links  Links
+}
+
+func NewBrowser(config *BrowserConfig) (*Browser, error) {
+	rand.Seed(time.Now().UnixNano())
+
+	var cfg *BrowserConfig
+	if config == nil {
+		cfg = &BrowserConfig{}
+	} else {
+		cfg = config
+	}
+	return &Browser{
+		Driver: cfg.Driver,
+		Logger: cfg.Logger,
+		Db:     cfg.Db,
+		Links:  cfg.Links,
+	}, nil
+}
+
+func (b *Browser) Browse() error {
+	err := b.BrowseLinks(b.Links, b.Driver, b.Db)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *Browser) BrowseLinks(links Links, driver *agouti.WebDriver, db *sql.DB) (err error) {
+
+	if err != nil {
+		return fmt.Errorf("Failed to start driver:%v", err)
+	}
+
+	if err := driver.Start(); err != nil {
+		return fmt.Errorf("Failed to start driver:%v", err)
+	}
+	defer driver.Stop()
+
+	for link, _ := range links {
+		var id *string
+		if id, err = BrowseLink(link, driver, db); err != nil {
+			return fmt.Errorf("Failed to browse link:%v:%v", link, err)
+		}
+		level.Info(b.Logger).Log("msg", "browsed link", "id", id, "from", link.From.String(), "to", link.To.String())
+	}
+	return nil
+}
+
+func prepareBrowse(db *sql.DB, page *agouti.Page) error {
+	//db.Exec(fmt.Sprintf("select now(); -- start browse %s", 'a'))
+	//page.Navigate(link.From.Path)
+	return nil
+}
+
+func logBrowse(db *sql.DB) error {
+	//db.Exec(fmt.Sprintf("select now(); -- end browse %s", 'a'))
+	//page.Screenshot(makeBrowsLogFilename())
+	//page.CloseWindow()
+	return nil
+}
+
+func BrowseLink(link Link, driver *agouti.WebDriver, db *sql.DB) (id *string, err error) {
+
+	bid := makeBrowseId()
+
+	page, err := driver.NewPage(agouti.Browser("chrome"))
+	if err != nil {
+		return nil, fmt.Errorf("Failed new page:%v", err)
+	}
+
+	if err := page.Navigate(link.From.String()); err != nil {
+		return nil, fmt.Errorf("Failed to navigate:%v", err)
+	}
+
+	startQuery := fmt.Sprintf("SELECT 1 FROM DUAL -- start browse: %s", bid)
+	db.QueryRow(startQuery)
+
+	// TODO: change to click
+	if err := page.Navigate(link.To.String()); err != nil {
+		return nil, fmt.Errorf("Failed to navigate:%v", err)
+	}
+
+	endQuery := fmt.Sprintf("SELECT 1 FROM DUAL -- end browse: %s", bid)
+	db.QueryRow(endQuery)
+
+	err = page.Screenshot(fmt.Sprintf("%s.png", bid))
+	if err != nil {
+		return nil, fmt.Errorf("Failed to save snapshot:%v", err)
+	}
+
+	html, err := page.HTML()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to open page:%v", err)
+	}
+	err = ioutil.WriteFile(fmt.Sprintf("%s.html", bid), []byte(html), 0644)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to save html:%v", err)
+	}
+	page.CloseWindow()
+	saveGeneralLog(bid, db)
+
+	return &bid, nil
+}
+
+func saveGeneralLog(bid string, db *sql.DB) (err error) {
+	genQuery := fmt.Sprintf("SELECT event_time, user_host, argument FROM mysql.general_log where event_time > '%s/%s/%s %s:%s' and argument like '%%%s%%'",
+		bid[0:4], bid[4:6], bid[6:8], bid[8:10], bid[10:12], bid)
+	row := db.QueryRow(genQuery)
+	var gen GeneralLog
+	row.Scan((&gen.Event_time), (&gen.User_host), (&gen.Argument))
+
+	err = ioutil.WriteFile(fmt.Sprintf("%s.sql_log", bid), []byte(fmt.Sprintf("%v", gen)), 0644)
+	if err != nil {
+		return fmt.Errorf("Failed to save sql_log:%v", err)
+	}
+	return nil
+}
+
+type GeneralLog struct {
+	Event_time string
+	User_host  string
+	Argument   string
+}
+
+var rLetters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func makeBrowseId() string {
+	return fmt.Sprintf("%s%s", time.Now().Format("20060102150405"), string(rLetters[rand.Intn(len(rLetters))]))
+}
+
+func NewDriver() (*agouti.WebDriver, error) {
+	return agouti.ChromeDriver(
+		agouti.ChromeOptions("args", []string{
+			//	"--headless",
+			"--window-size=1280,800",
+		}),
+		agouti.Debug,
+	), nil
 }

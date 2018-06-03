@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -113,5 +114,13 @@ func main() {
 		level.Error(logger).Log("msg", "failed to scrape", "error", err)
 		os.Exit(1)
 	}
+
+	links, err := gos.SummaryLink(linkScraper.Links)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to summary ", "error", err)
+		os.Exit(1)
+	}
+	b, err := gos.Links2Json(links)
+	fmt.Println(string(b))
 
 }
