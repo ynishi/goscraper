@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/DATA-DOG/go-sqlmock"
+  packages = ["."]
+  revision = "d76b18b42f285b792bf985118980ce9eacea9d10"
+  version = "v1.3.0"
+
+[[projects]]
   name = "github.com/PuerkitoBio/goquery"
   packages = ["."]
   revision = "a86ea073017a6beddef78c8659e7224e8ca634b0"
@@ -48,6 +54,12 @@
   packages = ["."]
   revision = "390ab7935ee28ec6b286364bba9b4dd6410cb3d5"
   version = "v0.3.0"
+
+[[projects]]
+  name = "github.com/go-sql-driver/mysql"
+  packages = ["."]
+  revision = "a0583e0143b1624142adab07e0e97fe106d99561"
+  version = "v1.3.0"
 
 [[projects]]
   name = "github.com/go-stack/stack"
@@ -114,6 +126,12 @@
   name = "github.com/saintfish/chardet"
   packages = ["."]
   revision = "3af4cd4741ca4f3eb0c407c034571a6fb0ea529c"
+
+[[projects]]
+  name = "github.com/sclevine/agouti"
+  packages = [".","api","api/internal/bus","api/internal/service","internal/element","internal/target"]
+  revision = "e3f6c97a4077ad821daab49db8172cf9f6690faf"
+  version = "v3.0.0"
 
 [[projects]]
   name = "github.com/spf13/afero"
@@ -184,6 +202,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "889391a8210d670ff5fce7b5ac18cec60a46d681a29628a0bc8247cba90a8a80"
+  inputs-digest = "9472e336fe85012760257f384b0984cabe4c94bd0625a015196b443f46071422"
   solver-name = "gps-cdcl"
   solver-version = 1
