@@ -348,3 +348,49 @@ func LogLink(logger log.Logger, msg string, link *Link) {
 		"method", link.Method,
 	)
 }
+
+func SummaryLink(links Links) (res Links, err error) {
+	res = make(Links)
+	for l, _ := range links {
+		res, _ = addNotSimiler(res, l)
+	}
+	return res, nil
+}
+
+func addNotSimiler(links Links, link Link) (resLinks Links, isAdded bool) {
+	found := false
+	for l, _ := range links {
+		if isSimilerURL(link.From, l.From) && isSimilerURL(link.To, l.To) {
+			found = true
+			break
+		}
+	}
+	if found {
+		return links, false
+	} else {
+		links[link] = true
+		return links, false
+	}
+}
+
+func isSimilerURL(u1, u2 *url.URL) (same bool) {
+	if u1.Host == u2.Host && u1.Path == u2.Path {
+		q1 := u1.Query()
+		q2 := u2.Query()
+
+		if len(q2) != len(q2) {
+			return false
+		}
+
+		same = true
+		for k, _ := range q1 {
+			if _, b := q2[k]; !b {
+				same = false
+				break
+			}
+		}
+		return same
+	} else {
+		return false
+	}
+}
