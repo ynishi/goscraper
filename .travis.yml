@@ -11,4 +11,5 @@ install:
   - $GOPATH/bin/dep ensure
 
 script:
-  - go build 
+  - go test
+  - go install
