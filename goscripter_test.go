@@ -94,8 +94,13 @@ func TestSummaryLink(t *testing.T) {
 }
 
 func TestBrowseLinks(t *testing.T) {
+
+	l := l1
+	l.Tag = "a"
+	l.Text = "More information..."
+
 	blinks := Links{
-		l1: true,
+		l: true,
 	}
 	driver, err := NewDriver()
 	if err != nil {

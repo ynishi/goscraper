@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -36,6 +37,11 @@ func init() {
 	viper.SetDefault(gos.OptUSECONFIG, false)
 	viper.SetDefault(gos.OptOUTFILE, "output")
 	viper.SetDefault(gos.OptOUTTYPE, gos.OptOUTPUTCSV)
+	viper.SetDefault(gos.OptDBUSERNAME, "username")
+	viper.SetDefault(gos.OptDBPASSWORD, "password")
+	viper.SetDefault(gos.OptDBHOST, "localhost")
+	viper.SetDefault(gos.OptDBPORT, "3306")
+	viper.SetDefault(gos.OptDBDATABASE, "database")
 
 	viper.SetEnvPrefix(gos.OptSCRP) // env SCRP_XXX
 	viper.BindEnv(gos.OptDOMAIN)    // comma separated list, no use colly default env
@@ -53,6 +59,11 @@ func init() {
 	viper.BindEnv(gos.OptOUTTYPE)
 	viper.BindEnv(gos.OptURLFILTER)    // comma separated list
 	viper.BindEnv(gos.OptDISURLFILTER) //comma separated list
+	viper.BindEnv(gos.OptDBUSERNAME)
+	viper.BindEnv(gos.OptDBPASSWORD)
+	viper.BindEnv(gos.OptDBHOST)
+	viper.BindEnv(gos.OptDBPORT)
+	viper.BindEnv(gos.OptDBDATABASE)
 
 	if viper.GetBool(gos.OptUSECONFIG) {
 		viper.SetConfigName(viper.GetString(gos.OptCONFIG))
@@ -123,4 +134,34 @@ func main() {
 	b, err := gos.Links2Json(links)
 	fmt.Println(string(b))
 
+	driver, err := gos.NewDriver()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to new Web driver", "error", err)
+		os.Exit(1)
+	}
+	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
+		viper.GetString(gos.OptDBUSERNAME),
+		viper.GetString(gos.OptDBPASSWORD),
+		viper.GetString(gos.OptDBHOST),
+		viper.GetString(gos.OptDBPORT),
+		viper.GetString(gos.OptDBDATABASE)))
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to open db connection", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	browser, err := gos.NewBrowser(
+		&gos.BrowserConfig{
+			Driver: driver,
+			Db:     db,
+			Logger: logger,
+			Links:  links,
+		},
+	)
+	err = browser.Browse()
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to browse", "error", err)
+		os.Exit(1)
+	}
 }

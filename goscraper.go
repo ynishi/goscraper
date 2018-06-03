@@ -43,6 +43,11 @@ const (
 	OptOUTFILE       = "outfile"
 	OptDISURLFILTER  = "disurlfilter"
 	OptURLFILTER     = "urlfilter"
+	OptDBUSERNAME    = "dbusername"
+	OptDBPASSWORD    = "dbpassword"
+	OptDBDATABASE    = "dbdatabase"
+	OptDBHOST        = "dbhost"
+	OptDBPORT        = "dbport"
 )
 
 var FormTypeBtn = map[string]bool{
@@ -491,9 +496,9 @@ func BrowseLink(link Link, driver *agouti.WebDriver, db *sql.DB) (id *string, er
 	startQuery := fmt.Sprintf("SELECT 1 FROM DUAL -- start browse: %s", bid)
 	db.QueryRow(startQuery)
 
-	// TODO: change to click
-	if err := page.Navigate(link.To.String()); err != nil {
-		return nil, fmt.Errorf("Failed to navigate:%v", err)
+	err = Link2Click(link, page.Find("body")).Click()
+	if err != nil {
+		return nil, fmt.Errorf("Failed to click:%v", err)
 	}
 
 	endQuery := fmt.Sprintf("SELECT 1 FROM DUAL -- end browse: %s", bid)
@@ -518,9 +523,30 @@ func BrowseLink(link Link, driver *agouti.WebDriver, db *sql.DB) (id *string, er
 	return &bid, nil
 }
 
+func Link2Click(link Link, selection *agouti.Selection) *agouti.Selection {
+	if link.AttrId != "" {
+		return selection.FindByID(link.AttrId)
+	}
+	if link.Tag == "a" {
+		return selection.FirstByLink(link.Text)
+	}
+	if link.Tag == "form" {
+		return selection.FirstByButton(link.Text)
+	}
+	return selection.FindByName(link.Text)
+}
+
 func saveGeneralLog(bid string, db *sql.DB) (err error) {
-	genQuery := fmt.Sprintf("SELECT event_time, user_host, argument FROM mysql.general_log where event_time > '%s/%s/%s %s:%s' and argument like '%%%s%%'",
-		bid[0:4], bid[4:6], bid[6:8], bid[8:10], bid[10:12], bid)
+	genQuery := fmt.Sprintf(`
+      SELECT
+        event_time,
+        user_host,
+        argument
+      FROM
+        mysql.general_log
+      where
+        event_time > '%s/%s/%s %s:%s'
+        and argument like '%%%s%%'`, bid[0:4], bid[4:6], bid[6:8], bid[8:10], bid[10:12], bid)
 	row := db.QueryRow(genQuery)
 	var gen GeneralLog
 	row.Scan((&gen.Event_time), (&gen.User_host), (&gen.Argument))
@@ -547,7 +573,7 @@ func makeBrowseId() string {
 func NewDriver() (*agouti.WebDriver, error) {
 	return agouti.ChromeDriver(
 		agouti.ChromeOptions("args", []string{
-			//	"--headless",
+			//"--headless",
 			"--window-size=1280,800",
 		}),
 		agouti.Debug,
