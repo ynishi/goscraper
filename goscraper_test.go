@@ -1,9 +1,12 @@
 package goscraper
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -13,62 +16,56 @@ import (
 )
 
 var (
-	links          Links
-	l1, l2, l3, l4 Link
-	logger         log.Logger
+	links  Links
+	ls     []*Link
+	logger log.Logger
 )
 
+type testData struct {
+	FromURL     string `json:"from_url"`
+	ToURL       string `json:"to_url"`
+	AttrOnClick string `json:"attr_on_click"`
+}
+
 func init() {
-	from1, err := url.Parse("http://example.com")
+
+	path := filepath.Join("testdata", "goscraper_test.json")
+	bytes, err := ioutil.ReadFile(path)
 	if err != nil {
-		fmt.Errorf("failed prepare from1 url:%v", err)
-	}
-	to1, err := url.Parse("http://example.com?a1=v11&a2=v2")
-	if err != nil {
-		fmt.Errorf("failed prepare from1 url:%v", err)
-	}
-	l1 = Link{
-		From:        *from1,
-		To:          *to1,
-		AttrOnClick: "",
-	}
-	from2, err := url.Parse("http://example.com")
-	if err != nil {
-		fmt.Errorf("failed prepare from1 url:%v", err)
-	}
-	to2, err := url.Parse("http://example.com?a1=v12")
-	if err != nil {
-		fmt.Errorf("failed prepare from1 url:%v", err)
-	}
-	l2 = Link{
-		From:        *from2,
-		To:          *to2,
-		AttrOnClick: "",
-	}
-	from3, err := url.Parse("http://example.com/1")
-	if err != nil {
-		fmt.Errorf("failed prepare from1 url:%v", err)
-	}
-	to3, err := url.Parse("http://example.com?a2=v2&a1=v11")
-	if err != nil {
-		fmt.Errorf("failed prepare from1 url:%v", err)
-	}
-	l3 = Link{
-		From:        *from3,
-		To:          *to3,
-		AttrOnClick: "",
-	}
-	l4 = Link{
-		From:        *from1,
-		To:          *to1,
-		AttrOnClick: "javascript:void(0)",
+		fmt.Errorf("failed read testdata: %v", err)
 	}
 
-	links = Links{
-		l1: true,
-		l2: true,
-		l3: true,
-		l4: true,
+	tD := []testData{}
+	err = json.Unmarshal(bytes, &tD)
+	if err != nil {
+		fmt.Errorf("failed unmarshal testdata: %v", err)
+	}
+
+	links = make(Links)
+	for _, d := range tD {
+		from, err := url.Parse(d.FromURL)
+		if err != nil {
+			fmt.Errorf("failed prepare from url:%v", err)
+		}
+		to, err := url.Parse(d.ToURL)
+		if err != nil {
+			fmt.Errorf("failed prepare to url:%v", err)
+		}
+
+		ls = append(ls, &Link{
+			From:        *from,
+			To:          *to,
+			AttrOnClick: d.AttrOnClick,
+		})
+	}
+
+	fmt.Println(links)
+
+	ls[3].From = ls[0].From
+	ls[3].To = ls[0].To
+
+	for _, l := range ls {
+		links[*l] = true
 	}
 
 	w := log.NewSyncWriter(os.Stderr)
@@ -79,9 +76,9 @@ func init() {
 
 func TestSummaryLink(t *testing.T) {
 	expectedLinks := Links{
-		l1: true,
-		l3: true,
-		l4: true,
+		*ls[0]: true,
+		*ls[2]: true,
+		*ls[3]: true,
 	}
 
 	testLinks, err := SummaryLink(links)
@@ -95,7 +92,7 @@ func TestSummaryLink(t *testing.T) {
 
 func TestBrowseLinks(t *testing.T) {
 
-	l := l1
+	l := *ls[0]
 	l.Tag = "a"
 	l.Text = "More information..."
 
@@ -136,11 +133,11 @@ func TestNewDriver(t *testing.T) {
 
 func TestAdd(t *testing.T) {
 	testLinks := Links{
-		l1: true,
+		*ls[0]: true,
 	}
 	expect := Links{
-		l1: true,
-		l2: true,
+		*ls[0]: true,
+		*ls[1]: true,
 	}
 	from, _ := url.Parse("http://example.com")
 	to, _ := url.Parse("http://example.com")
@@ -148,13 +145,13 @@ func TestAdd(t *testing.T) {
 		From: *from,
 		To:   *to,
 	}
-	if testLinks, ok := Add(testLinks, &l1); ok {
+	if testLinks, ok := Add(testLinks, ls[0]); ok {
 		t.Errorf("added same link: %v", testLinks)
 	}
 	if testLinks, ok := Add(testLinks, &l); ok {
 		t.Errorf("added same from and to: %v", testLinks)
 	}
-	if testLinks, ok := Add(testLinks, &l2); !ok {
+	if testLinks, ok := Add(testLinks, ls[1]); !ok {
 		t.Errorf("not added diff link: %v", testLinks)
 	}
 	if !reflect.DeepEqual(expect, testLinks) {
@@ -164,8 +161,8 @@ func TestAdd(t *testing.T) {
 
 func TestUniqURL(t *testing.T) {
 	expect := []*url.URL{
-		&l1.From,
-		&l1.To,
+		&ls[0].From,
+		&ls[0].To,
 	}
 	testURLs := UniqURL(links)
 	if !reflect.DeepEqual(expect, testURLs) {
