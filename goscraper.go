@@ -425,23 +425,27 @@ func (ls *LinkScraper) FlushURLs() []*url.URL {
 }
 
 func UniqURL(links Links) (urls []*url.URL) {
+	us := []url.URL{}
 	for l, _ := range links {
 		foundf := false
 		foundt := false
-		for _, u := range urls {
-			if isSimilerURL(&l.From, u) {
+		for _, u := range us {
+			if isSimilerURL(&l.From, &u) {
 				foundf = true
 			}
-			if isSimilerURL(&l.To, u) {
+			if isSimilerURL(&l.To, &u) {
 				foundt = true
 			}
 		}
 		if !foundf {
-			urls = append(urls, &l.From)
+			us = append(us, l.From)
 		}
 		if !foundt {
-			urls = append(urls, &l.To)
+			us = append(us, l.To)
 		}
+	}
+	for i, _ := range us {
+		urls = append(urls, &us[i])
 	}
 	return urls
 }
@@ -466,7 +470,7 @@ func addNotSimiler(links Links, link Link) (resLinks Links, isAdded bool) {
 		return links, false
 	} else {
 		links[link] = true
-		return links, false
+		return links, true
 	}
 }
 
@@ -475,7 +479,7 @@ func isSimilerURL(u1, u2 *url.URL) (same bool) {
 		q1 := u1.Query()
 		q2 := u2.Query()
 
-		if len(q2) != len(q2) {
+		if len(q1) != len(q2) {
 			return false
 		}
 

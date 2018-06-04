@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 )
@@ -59,8 +60,6 @@ func init() {
 		})
 	}
 
-	fmt.Println(links)
-
 	ls[3].From = ls[0].From
 	ls[3].To = ls[0].To
 
@@ -77,6 +76,7 @@ func init() {
 func TestSummaryLink(t *testing.T) {
 	expectedLinks := Links{
 		*ls[0]: true,
+		*ls[1]: true,
 		*ls[2]: true,
 		*ls[3]: true,
 	}
@@ -163,8 +163,13 @@ func TestUniqURL(t *testing.T) {
 	expect := []*url.URL{
 		&ls[0].From,
 		&ls[0].To,
+		&ls[1].To,
 	}
-	testURLs := UniqURL(links)
+	testLinks := Links{
+		*ls[0]: true,
+		*ls[1]: true,
+	}
+	testURLs := UniqURL(testLinks)
 	if !reflect.DeepEqual(expect, testURLs) {
 		t.Errorf("not matched,\nwant: %v,\nhave: %v", expect, testURLs)
 	}
