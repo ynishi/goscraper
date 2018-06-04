@@ -23,13 +23,13 @@ func init() {
 	if err != nil {
 		fmt.Errorf("failed prepare from1 url:%v", err)
 	}
-	to1, err := url.Parse("http://example.com?a1=v11")
+	to1, err := url.Parse("http://example.com?a1=v11&a2=v2")
 	if err != nil {
 		fmt.Errorf("failed prepare from1 url:%v", err)
 	}
 	l1 = Link{
-		From:        from1,
-		To:          to1,
+		From:        *from1,
+		To:          *to1,
 		AttrOnClick: "",
 	}
 	from2, err := url.Parse("http://example.com")
@@ -41,26 +41,26 @@ func init() {
 		fmt.Errorf("failed prepare from1 url:%v", err)
 	}
 	l2 = Link{
-		From:        from2,
-		To:          to2,
+		From:        *from2,
+		To:          *to2,
 		AttrOnClick: "",
 	}
 	from3, err := url.Parse("http://example.com/1")
 	if err != nil {
 		fmt.Errorf("failed prepare from1 url:%v", err)
 	}
-	to3, err := url.Parse("http://example.com?a1=v11")
+	to3, err := url.Parse("http://example.com?a2=v2&a1=v11")
 	if err != nil {
 		fmt.Errorf("failed prepare from1 url:%v", err)
 	}
 	l3 = Link{
-		From:        from3,
-		To:          to3,
+		From:        *from3,
+		To:          *to3,
 		AttrOnClick: "",
 	}
 	l4 = Link{
-		From:        from1,
-		To:          to1,
+		From:        *from1,
+		To:          *to1,
 		AttrOnClick: "javascript:void(0)",
 	}
 
@@ -131,5 +131,44 @@ func TestNewDriver(t *testing.T) {
 	_, err := NewDriver()
 	if err != nil {
 		t.Errorf("error in NewDriver:%v", err)
+	}
+}
+
+func TestAdd(t *testing.T) {
+	testLinks := Links{
+		l1: true,
+	}
+	expect := Links{
+		l1: true,
+		l2: true,
+	}
+	from, _ := url.Parse("http://example.com")
+	to, _ := url.Parse("http://example.com")
+	l := Link{
+		From: *from,
+		To:   *to,
+	}
+	if testLinks, ok := Add(testLinks, &l1); ok {
+		t.Errorf("added same link: %v", testLinks)
+	}
+	if testLinks, ok := Add(testLinks, &l); ok {
+		t.Errorf("added same from and to: %v", testLinks)
+	}
+	if testLinks, ok := Add(testLinks, &l2); !ok {
+		t.Errorf("not added diff link: %v", testLinks)
+	}
+	if !reflect.DeepEqual(expect, testLinks) {
+		t.Errorf("not matched,\nwant: %v,\nhave: %v", expect, testLinks)
+	}
+}
+
+func TestUniqURL(t *testing.T) {
+	expect := []*url.URL{
+		&l1.From,
+		&l1.To,
+	}
+	testURLs := UniqURL(links)
+	if !reflect.DeepEqual(expect, testURLs) {
+		t.Errorf("not matched,\nwant: %v,\nhave: %v", expect, testURLs)
 	}
 }

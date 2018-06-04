@@ -42,6 +42,9 @@ func init() {
 	viper.SetDefault(gos.OptDBHOST, "localhost")
 	viper.SetDefault(gos.OptDBPORT, "3306")
 	viper.SetDefault(gos.OptDBDATABASE, "database")
+	viper.SetDefault(gos.OptLINKSELECTOR, "a[href],form,[onclick]")
+	viper.SetDefault(gos.OptISDOPOST, false)
+	viper.SetDefault(gos.OptCHECKLOGIN, "loggedin")
 
 	viper.SetEnvPrefix(gos.OptSCRP) // env SCRP_XXX
 	viper.BindEnv(gos.OptDOMAIN)    // comma separated list, no use colly default env
@@ -64,6 +67,9 @@ func init() {
 	viper.BindEnv(gos.OptDBHOST)
 	viper.BindEnv(gos.OptDBPORT)
 	viper.BindEnv(gos.OptDBDATABASE)
+	viper.BindEnv(gos.OptLINKSELECTOR)
+	viper.BindEnv(gos.OptISDOPOST)
+	viper.BindEnv(gos.OptCHECKLOGIN)
 
 	if viper.GetBool(gos.OptUSECONFIG) {
 		viper.SetConfigName(viper.GetString(gos.OptCONFIG))
@@ -110,9 +116,11 @@ func main() {
 				viper.GetString(gos.OptFORM_USERNAME): viper.GetString(gos.OptUSERNAME),
 				viper.GetString(gos.OptFORM_PASSWORD): viper.GetString(gos.OptPASSWORD),
 			},
-			Entry:   viper.GetString(gos.OptENTRY),
-			OutFile: viper.GetString(gos.OptOUTFILE),
-			OutType: viper.GetString(gos.OptOUTTYPE),
+			Entry:        viper.GetString(gos.OptENTRY),
+			OutFile:      viper.GetString(gos.OptOUTFILE),
+			OutType:      viper.GetString(gos.OptOUTTYPE),
+			LinkSelector: viper.GetString(gos.OptLINKSELECTOR),
+			IsDoPost:     viper.GetBool(gos.OptISDOPOST),
 		},
 	)
 	if err != nil {
@@ -133,6 +141,9 @@ func main() {
 	}
 	b, err := gos.Links2Json(links)
 	fmt.Println(string(b))
+
+	linkScraper.FlushURLs()
+	fmt.Println(linkScraper.URLs)
 
 	driver, err := gos.NewDriver()
 	if err != nil {

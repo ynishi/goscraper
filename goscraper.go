@@ -48,6 +48,9 @@ const (
 	OptDBDATABASE    = "dbdatabase"
 	OptDBHOST        = "dbhost"
 	OptDBPORT        = "dbport"
+	OptLINKSELECTOR  = "linkselector"
+	OptISDOPOST      = "isdopost"
+	OptCHECKLOGIN    = "checklogin"
 )
 
 var FormTypeBtn = map[string]bool{
@@ -58,38 +61,45 @@ var FormTypeBtn = map[string]bool{
 }
 
 type Link struct {
-	From        *url.URL `json:"from"`
-	To          *url.URL `json:"to"`
-	AttrId      string   `json:"attr_id"`
-	AttrOnClick string   `json:"attr_onclick"`
-	Text        string   `json:"text"`
-	Tag         string   `json:"tag"`
-	Method      string   `json:"method"`
-	Selector    string   `json:"selector"`
+	From        url.URL `json:"from"`
+	To          url.URL `json:"to"`
+	AttrId      string  `json:"attr_id"`
+	AttrOnClick string  `json:"attr_onclick"`
+	Text        string  `json:"text"`
+	Tag         string  `json:"tag"`
+	Method      string  `json:"method"`
+	Selector    string  `json:"selector"`
 }
 
 type Links map[Link]bool
 
 type LinkScraper struct {
-	Collector *colly.Collector
-	Links     Links
-	Logger    log.Logger
-	LoginURL  string
-	LoginData map[string]string
-	Entry     string
-	OutFile   string
-	OutType   string
+	Collector    *colly.Collector
+	Links        Links
+	Logger       log.Logger
+	LoginURL     string
+	LoginData    map[string]string
+	Entry        string
+	OutFile      string
+	OutType      string
+	LinkSelector string
+	IsDoPost     bool
+	CheckLogin   string
+	URLs         []*url.URL
 }
 
 type Config struct {
-	Links     Links
-	Logger    log.Logger
-	Collector *colly.Collector
-	LoginURL  string
-	LoginData map[string]string
-	Entry     string
-	OutFile   string
-	OutType   string
+	Links        Links
+	Logger       log.Logger
+	Collector    *colly.Collector
+	LoginURL     string
+	LoginData    map[string]string
+	Entry        string
+	OutFile      string
+	OutType      string
+	LinkSelector string
+	IsDoPost     bool
+	CheckLogin   string
 }
 
 func NewLinkScraper(config *Config) (*LinkScraper, error) {
@@ -142,6 +152,20 @@ func NewLinkScraper(config *Config) (*LinkScraper, error) {
 			}
 			return cfg.OutType
 		}(),
+		LinkSelector: func() string {
+			if cfg.LinkSelector == "" {
+				return "a[href],form,[onclick]"
+			}
+			return cfg.LinkSelector
+		}(),
+		IsDoPost: cfg.IsDoPost,
+		CheckLogin: func() string {
+			if cfg.CheckLogin == "" {
+				return "loggedin"
+			}
+			return cfg.CheckLogin
+		}(),
+		URLs: make([]*url.URL, 0),
 	}, nil
 }
 
@@ -169,17 +193,16 @@ func (ls *LinkScraper) registHandler() {
 		r.Ctx.Put("url", r.URL.String())
 	})
 
-	ls.Collector.OnHTML("a[html],form,[onclick]", func(e *colly.HTMLElement) {
+	ls.Collector.OnHTML(ls.LinkSelector, func(e *colly.HTMLElement) {
 		link, err := E2Link(e)
 		if err != nil {
 			level.Error(ls.Logger).Log("msg", "failed to create link", "error", err)
 		}
-		link.Selector = "a[html],form,[onclick]"
-		LogLink(level.Info(ls.Logger), "found link", link)
-		if exists := ls.Links[*link]; !exists {
-			ls.Links[*link] = true
-			level.Debug(ls.Logger).Log("msg", "added link", "links", fmt.Sprintf("%v", ls.Links))
-			if link.Method == http.MethodPost {
+		link.Selector = ls.LinkSelector
+		LogLink(level.Error(ls.Logger), "found link", link)
+		if _, ok := Add(ls.Links, link); ok {
+			level.Debug(ls.Logger).Log("msg", "added link", "link", link)
+			if ls.IsDoPost && link.Method == http.MethodPost {
 				param := make(map[string]string)
 				e.ForEach("input", func(_ int, ce *colly.HTMLElement) {
 					if !FormTypeBtn[ce.Attr("type")] {
@@ -187,26 +210,61 @@ func (ls *LinkScraper) registHandler() {
 					}
 				})
 				level.Debug(ls.Logger).Log("msg", "post", "url", link.To.String(), "param", fmt.Sprintf("%v", param))
-				ls.Collector.Post(link.To.String(), param)
-			} else {
-				if !strings.HasPrefix(link.To.String(), "javascript:") {
-					level.Debug(ls.Logger).Log("msg", "visit", "url", e.Request.AbsoluteURL(link.To.String()))
-					ls.Collector.Visit(link.To.String())
+				if !ls.IsLogin(e) {
+					ls.LoginE(e)
 				}
+				e.Request.Post(link.To.String(), param)
+				return
 			}
+			if !strings.HasPrefix(strings.TrimSpace(link.To.String()), "javascript:") {
+				level.Debug(ls.Logger).Log("msg", "visit", "url", e.Request.AbsoluteURL(link.To.String()))
+				if !ls.IsLogin(e) {
+					ls.LoginE(e)
+				}
+				e.Request.Visit(link.To.String())
+				return
+			}
+			LogLink(level.Debug(ls.Logger), "not visited link", link)
+			return
 		} else {
 			LogLink(level.Debug(ls.Logger), "already exists in links", link)
+			return
 		}
 	})
 }
 
+func Add(links Links, link *Link) (res Links, ok bool) {
+	switch {
+	case link.From.String() == link.To.String():
+		return links, false
+	case links[*link]:
+		return links, false
+	default:
+		links[*link] = true
+		return links, true
+	}
+}
+
 func (ls *LinkScraper) Login() (err error) {
+
 	err = ls.Collector.Post(ls.LoginURL, ls.LoginData)
 	if err != nil {
 		level.Error(ls.Logger).Log("msg", "failed login", "error", err)
 		return err
 	}
 	return nil
+}
+
+func (ls *LinkScraper) LoginE(e *colly.HTMLElement) (err error) {
+	e.Request.Post(ls.LoginURL, ls.LoginData)
+	return nil
+}
+
+func (ls *LinkScraper) IsLogin(e *colly.HTMLElement) bool {
+	if strings.Index(string(e.Response.Body), ls.CheckLogin) > -1 {
+		return true
+	}
+	return false
 }
 
 func E2Link(e *colly.HTMLElement) (link *Link, err error) {
@@ -253,8 +311,8 @@ func E2Link(e *colly.HTMLElement) (link *Link, err error) {
 	}
 
 	link = &Link{
-		From:        from,
-		To:          to,
+		From:        *from,
+		To:          *to,
 		AttrId:      e.Attr("id"),
 		AttrOnClick: e.Attr("onclick"),
 		Text:        text,
@@ -361,6 +419,33 @@ func LogLink(logger log.Logger, msg string, link *Link) {
 	)
 }
 
+func (ls *LinkScraper) FlushURLs() []*url.URL {
+	ls.URLs = UniqURL(ls.Links)
+	return ls.URLs
+}
+
+func UniqURL(links Links) (urls []*url.URL) {
+	for l, _ := range links {
+		foundf := false
+		foundt := false
+		for _, u := range urls {
+			if isSimilerURL(&l.From, u) {
+				foundf = true
+			}
+			if isSimilerURL(&l.To, u) {
+				foundt = true
+			}
+		}
+		if !foundf {
+			urls = append(urls, &l.From)
+		}
+		if !foundt {
+			urls = append(urls, &l.To)
+		}
+	}
+	return urls
+}
+
 func SummaryLink(links Links) (res Links, err error) {
 	res = make(Links)
 	for l, _ := range links {
@@ -372,7 +457,7 @@ func SummaryLink(links Links) (res Links, err error) {
 func addNotSimiler(links Links, link Link) (resLinks Links, isAdded bool) {
 	found := false
 	for l, _ := range links {
-		if isSimilerURL(link.From, l.From) && isSimilerURL(link.To, l.To) && link.AttrOnClick == l.AttrOnClick {
+		if isSimilerURL(&link.From, &l.From) && isSimilerURL(&link.To, &l.To) && link.AttrOnClick == l.AttrOnClick {
 			found = true
 			break
 		}
@@ -464,19 +549,6 @@ func (b *Browser) BrowseLinks(links Links, driver *agouti.WebDriver, db *sql.DB)
 		}
 		level.Info(b.Logger).Log("msg", "browsed link", "id", id, "from", link.From.String(), "to", link.To.String())
 	}
-	return nil
-}
-
-func prepareBrowse(db *sql.DB, page *agouti.Page) error {
-	//db.Exec(fmt.Sprintf("select now(); -- start browse %s", 'a'))
-	//page.Navigate(link.From.Path)
-	return nil
-}
-
-func logBrowse(db *sql.DB) error {
-	//db.Exec(fmt.Sprintf("select now(); -- end browse %s", 'a'))
-	//page.Screenshot(makeBrowsLogFilename())
-	//page.CloseWindow()
 	return nil
 }
 
