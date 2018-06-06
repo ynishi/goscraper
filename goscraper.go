@@ -496,6 +496,12 @@ func isSimilerURL(u1, u2 *url.URL) (same bool) {
 	}
 }
 
+func SummaryURL(u1, u2 *url.URL) (map[url.URL]bool, error) {
+	// TODO: impl
+	us := map[url.URL]bool{*u1: true}
+	return us, nil
+}
+
 type Browser struct {
 	Driver *agouti.WebDriver
 	Db     *sql.DB

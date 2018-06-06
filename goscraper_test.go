@@ -10,6 +10,14 @@ import (
 	"reflect"
 	"testing"
 
+	"golang.org/x/text/unicode/rangetable"
+
+	"github.com/leanovate/gopter"
+
+	"github.com/leanovate/gopter/gen"
+
+	"github.com/leanovate/gopter/prop"
+
 	"github.com/DATA-DOG/go-sqlmock"
 
 	"github.com/go-kit/kit/log"
@@ -174,3 +182,42 @@ func TestUniqURL(t *testing.T) {
 		t.Errorf("not matched,\nwant: %v,\nhave: %v", expect, testURLs)
 	}
 }
+
+func TestSummaryURL(t *testing.T) {
+	properties := gopter.NewProperties(nil)
+
+	properties.Property("any param values are summaryze", prop.ForAll(
+		func(v1, v2 string) bool {
+			u1, err := url.Parse(fmt.Sprintf("http://example.com?a1=%s", v1))
+			if err != nil {
+				return false
+			}
+			u2, err := url.Parse(fmt.Sprintf("http://example.com?a1=%s", v2))
+			if err != nil {
+				return false
+			}
+			us, err := SummaryURL(u1, u2)
+			if err != nil {
+				return false
+			}
+			if len(us) == 1 {
+				for u, _ := range us {
+					if u.Host == u1.Host && u.Path == u1.Path && len(u.Query()) == len(u1.Query()) {
+						return true
+					}
+				}
+			}
+			return false
+		},
+		gen.UnicodeString(uRLRT),
+		gen.UnicodeString(uRLRT),
+	))
+
+	properties.TestingRun(t)
+}
+
+var uRLSymbolT = rangetable.New('-', '.', '_', '~')
+var digitT = rangetable.New('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+var lowerT = rangetable.New('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z')
+var upperT = rangetable.New('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z')
+var uRLRT = rangetable.Merge(uRLSymbolT, digitT, lowerT, upperT)
